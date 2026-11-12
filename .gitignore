@@ -1,0 +1,19 @@
+# Terraform local files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+
+# Python local files
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local environment and downloaded telemetry copies
+.env
+.env.*
+databricks-input/

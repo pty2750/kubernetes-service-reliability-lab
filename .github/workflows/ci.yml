@@ -1,0 +1,69 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API ${{ matrix.release }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - release: v1
+            source: app.py
+            expected_status: "200"
+          - release: v2
+            source: app_v2.py
+            expected_status: "503"
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test the API
+        env:
+          APP_SOURCE: ${{ matrix.source }}
+          EXPECTED_STATUS: ${{ matrix.expected_status }}
+        run: |
+          docker build --build-arg "APP_SOURCE=$APP_SOURCE" -t reliability-api:ci .
+          docker run --detach --name reliability-api-ci \
+            --publish 127.0.0.1:18080:8080 reliability-api:ci
+
+          curl --fail --silent --show-error \
+            --retry 10 --retry-connrefused --retry-delay 1 \
+            --max-time 5 http://127.0.0.1:18080/health
+
+          actual_status=$(curl --silent --show-error --max-time 5 \
+            --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:18080/api/status)
+
+          echo "Expected HTTP $EXPECTED_STATUS, received HTTP $actual_status"
+          test "$actual_status" = "$EXPECTED_STATUS"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs reliability-api-ci || true
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.17.1"
+          terraform_wrapper: false
+
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate

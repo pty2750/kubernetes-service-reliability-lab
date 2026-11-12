@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: telemetry-baseline
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: telemetry
+          image: reliability-api:v1
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-u", "-c"]
+          args:
+            - |
+              import json
+              import socket
+              from datetime import datetime, timezone
+              from time import perf_counter
+              from urllib.error import HTTPError, URLError
+              from urllib.request import urlopen
+
+              url = "http://reliability-api:8080/api/status"
+              run_id = socket.gethostname()
+
+              for request_number in range(1, 21):
+                  event = {
+                      "run_id": run_id,
+                      "request_number": request_number,
+                      "timestamp": datetime.now(timezone.utc).isoformat(),
+                      "http_status": None,
+                      "app_version": None,
+                  }
+                  start = perf_counter()
+                  try:
+                      with urlopen(url, timeout=5) as response:
+                          event["http_status"] = response.status
+                          event["app_version"] = json.load(response).get("version")
+                  except HTTPError as error:
+                      event["http_status"] = error.code
+                  except (URLError, TimeoutError) as error:
+                      event["connection_error"] = str(error)
+                  event["latency_ms"] = round((perf_counter() - start) * 1000, 2)
+                  print(json.dumps(event))
